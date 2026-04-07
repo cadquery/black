@@ -26,6 +26,14 @@ try:
     from aiohttp import web
 except ImportError:
     has_blackd_deps = False
+
+    class AioHTTPTestCase:
+        pass
+
+    def unittest_run_loop(func: Any) -> Any:
+        return func
+
+
 else:
     has_blackd_deps = True
 
@@ -535,6 +543,7 @@ class BlackTestCase(unittest.TestCase):
         self.assertFormatEqual(expected, actual)
         black.assert_stable(source, actual, black.FileMode())
 
+    @unittest.skip("skip python2")
     @patch("black.dump_to_file", dump_to_stderr)
     def test_python2(self) -> None:
         source, expected = read_data("python2")
@@ -543,6 +552,7 @@ class BlackTestCase(unittest.TestCase):
         black.assert_equivalent(source, actual)
         black.assert_stable(source, actual, black.FileMode())
 
+    @unittest.skip("skip python2")
     @patch("black.dump_to_file", dump_to_stderr)
     def test_python2_print_function(self) -> None:
         source, expected = read_data("python2_print_function")
@@ -552,6 +562,7 @@ class BlackTestCase(unittest.TestCase):
         black.assert_equivalent(source, actual)
         black.assert_stable(source, actual, mode)
 
+    @unittest.skip("skip python2")
     @patch("black.dump_to_file", dump_to_stderr)
     def test_python2_unicode_literals(self) -> None:
         source, expected = read_data("python2_unicode_literals")
@@ -1571,7 +1582,7 @@ class BlackTestCase(unittest.TestCase):
     def test_shhh_click(self) -> None:
         try:
             from click import _unicodefun  # type: ignore
-        except ModuleNotFoundError:
+        except ImportError:
             self.skipTest("Incompatible Click version")
         if not hasattr(_unicodefun, "_verify_python3_env"):
             self.skipTest("Incompatible Click version")
@@ -1615,8 +1626,11 @@ class BlackTestCase(unittest.TestCase):
 
 
 class BlackDTestCase(AioHTTPTestCase):
-    async def get_application(self) -> web.Application:
-        return blackd.make_app()
+
+    if has_blackd_deps:
+
+        async def get_application(self) -> web.Application:
+            return blackd.make_app()
 
     # TODO: remove these decorators once the below is released
     # https://github.com/aio-libs/aiohttp/pull/3727

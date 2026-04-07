@@ -42,7 +42,6 @@ from appdirs import user_cache_dir
 from attr import dataclass, evolve, Factory
 import click
 import toml
-from typed_ast import ast3, ast27
 from pathspec import PathSpec
 
 # lib2to3 fork
@@ -3667,36 +3666,33 @@ class Report:
         return ", ".join(report) + "."
 
 
-def parse_ast(src: str) -> Union[ast.AST, ast3.AST, ast27.AST]:
+def parse_ast(src: str) -> ast.AST:
     filename = "<unknown>"
     if sys.version_info >= (3, 8):
         # TODO: support Python 4+ ;)
         for minor_version in range(sys.version_info[1], 4, -1):
             try:
-                return ast.parse(src, filename, feature_version=(3, minor_version))
+                return ast.parse(
+                    src,
+                    filename,
+                    feature_version=(3, minor_version),
+                    type_comments=True,
+                )
             except SyntaxError:
                 continue
-    else:
-        for feature_version in (7, 6):
-            try:
-                return ast3.parse(src, filename, feature_version=feature_version)
-            except SyntaxError:
-                continue
 
-    return ast27.parse(src)
+    return ast.parse(src, filename)
 
 
-def _fixup_ast_constants(
-    node: Union[ast.AST, ast3.AST, ast27.AST]
-) -> Union[ast.AST, ast3.AST, ast27.AST]:
+def _fixup_ast_constants(node: ast.AST) -> ast.AST:
     """Map ast nodes deprecated in 3.8 to Constant."""
-    if isinstance(node, (ast.Str, ast3.Str, ast27.Str, ast.Bytes, ast3.Bytes)):
+    if isinstance(node, (ast.Str, ast.Bytes)):
         return ast.Constant(value=node.s)
 
-    if isinstance(node, (ast.Num, ast3.Num, ast27.Num)):
+    if isinstance(node, ast.Num):
         return ast.Constant(value=node.n)
 
-    if isinstance(node, (ast.NameConstant, ast3.NameConstant)):
+    if isinstance(node, ast.NameConstant):
         return ast.Constant(value=node.value)
 
     return node
@@ -3705,7 +3701,7 @@ def _fixup_ast_constants(
 def assert_equivalent(src: str, dst: str) -> None:
     """Raise AssertionError if `src` and `dst` aren't equivalent."""
 
-    def _v(node: Union[ast.AST, ast3.AST, ast27.AST], depth: int = 0) -> Iterator[str]:
+    def _v(node: ast.AST, depth: int = 0) -> Iterator[str]:
         """Simple visitor generating strings to compare ASTs by content."""
 
         node = _fixup_ast_constants(node)
@@ -3714,10 +3710,7 @@ def assert_equivalent(src: str, dst: str) -> None:
 
         for field in sorted(node._fields):
             # TypeIgnore has only one field 'lineno' which breaks this comparison
-            type_ignore_classes = (ast3.TypeIgnore, ast27.TypeIgnore)
-            if sys.version_info >= (3, 8):
-                type_ignore_classes += (ast.TypeIgnore,)
-            if isinstance(node, type_ignore_classes):
+            if isinstance(node, ast.TypeIgnore):
                 break
 
             try:
@@ -3733,16 +3726,16 @@ def assert_equivalent(src: str, dst: str) -> None:
                     # parentheses and they change the AST.
                     if (
                         field == "targets"
-                        and isinstance(node, (ast.Delete, ast3.Delete, ast27.Delete))
-                        and isinstance(item, (ast.Tuple, ast3.Tuple, ast27.Tuple))
+                        and isinstance(node, ast.Delete)
+                        and isinstance(item, ast.Tuple)
                     ):
                         for item in item.elts:
                             yield from _v(item, depth + 2)
 
-                    elif isinstance(item, (ast.AST, ast3.AST, ast27.AST)):
+                    elif isinstance(item, ast.AST):
                         yield from _v(item, depth + 2)
 
-            elif isinstance(value, (ast.AST, ast3.AST, ast27.AST)):
+            elif isinstance(value, ast.AST):
                 yield from _v(value, depth + 2)
 
             else:
